@@ -1,0 +1,86 @@
+{
+  "temp": 400,
+  "pressure": 2000,
+  "boxsizex": 54,
+  "boxsizey": 54,
+  "boxsizez": 54,
+  "nexc": 0,
+  "nvolume": 1,
+  "ntrans": 4000,
+  "natoms":  4800,
+  "nsteps":  100000000,
+  "nequil":  10000000,
+  "nsample": 500000   ,
+  "cutoff": 10,
+  "statename": "testing2",
+
+  "system": {
+    "topology":
+    {
+      "atomtypes": [
+        {
+          "name": "LJ1",
+          "sig": 2.0,
+          "radius": 2.0,
+          "eps": 1.0,
+          "cutoff": 10
+        },
+        {
+          "name": "LJ3",
+          "sig": 3.5,
+          "radius": 3.0,
+          "eps": 1.4,
+          "cutoff": 10
+        }
+      ],
+      "molecules": [
+        {
+          "name": "LJ1",
+          "atoms": ["LJ1"],
+          "max_count": 4000,
+          "active_count": 4000,
+          "structure": "test-structure2.gro",
+          "mu": -17.8256
+        },
+        {
+          "name": "LJ3",
+          "atoms": ["LJ3"],
+          "max_count": 800,
+          "active_count": 800,
+          "structure": "test-structure3.gro",
+          "mu": -18.3824
+        }
+      ]
+    },
+    "insertmolecules": [
+      {"name": "LJ1", "count": 4000, "max_count":  4000},
+      {"name": "LJ3", "count": 800,  "max_count":  800}
+    ]
+
+  },
+  "analysis": [
+    {
+      "widom": {
+        "output": "test.widom-0.dat",
+        "begin": 0,
+        "ninsert": 1,
+        "molecule": "LJ1"
+      }
+    },
+    {
+      "widom": {
+        "output": "test.widom-1.dat",
+        "begin": 0,
+        "ninsert": 1,
+        "molecule": "LJ3"
+      }
+    },
+    {
+      "pressure": {
+        "output": "pressure-testing"
+      }
+    }
+  ]
+}
+
+

@@ -1,0 +1,420 @@
+
+void verletListFromCellListStepMisAlligned(const int& step, VerletList* verlet_list, Grid& cell_list, Energy& energizer,
+                                           real* x_coords, real* y_coords, real* z_coords, size_t n_atoms, real box_size,
+                                           const real dx0, const real A, const real B, const real cutoff, real T, real R,
+                                           std::default_random_engine& e1, std::uniform_real_distribution<real>& uniform_dist) {
+    if(step%2== 0){
+        verlet_list->constructVerletListEfficient(cell_list, x_coords, y_coords, z_coords, n_atoms, box_size);
+    }
+    for(int ki = 0; ki<n_atoms; ++ki) {
+        const auto i = ki;//changed_indices[ki];
+        const auto dx = (uniform_dist(e1) - 0.5) * dx0;
+        const auto dy = (uniform_dist(e1) - 0.5) * dx0;
+        const auto dz = (uniform_dist(e1) - 0.5) * dx0;
+
+        gmx::RVec r_coords_new;
+
+        r_coords_new[XX] = (x_coords[i] + dx);
+        r_coords_new[XX]+= -(box_size) * (r_coords_new[XX] > box_size) + (box_size) * (r_coords_new[XX] < 0) ;
+        r_coords_new[YY] = (y_coords[i] + dy);
+        r_coords_new[YY]+= -(box_size) * (r_coords_new[YY] > box_size) + (box_size) * (r_coords_new[YY] < 0) ;
+        r_coords_new[ZZ] = (z_coords[i] + dz);
+        r_coords_new[ZZ] += -(box_size) * (r_coords_new[ZZ] > box_size) + (box_size) * (r_coords_new[ZZ] < 0) ;
+
+        const real new_particle_energy =
+                energizer.calcNewParticleEnergyVL(*verlet_list, i,
+                                                  x_coords, y_coords, z_coords,
+                                                  r_coords_new[XX], r_coords_new[YY], r_coords_new[ZZ],
+                                                  box_size,
+                                                  A, B, cutoff * cutoff);
+        const real energy_change = new_particle_energy - verlet_list->particle_to_LJold[i];
+        const auto mc_factor = std::exp(-energy_change / (R * T));
+        auto roll = uniform_dist(e1);
+        if (roll < std::min(mc_factor, 1.0f)) {
+        x_coords[i] = r_coords_new[XX];
+        y_coords[i] = r_coords_new[YY];
+        z_coords[i] = r_coords_new[ZZ];
+
+        updateCelllist(cell_list, r_coords_new[XX], r_coords_new[YY], r_coords_new[ZZ], i);
+    //    energy += energy_change;
+
+         verlet_list->particle_to_LJold[i] = new_particle_energy;
+
+            n_accepted++;
+        }
+        n_total++;
+    }
+}
+*/
+
+
+void verletListFromCellListSpecialStepMisAlligned(const size_t n_special_steps,
+                                                  VerletList* verlet_list_sp,
+                                                  Grid& cell_list, Energy& energizer,
+                                                real* x_coords, real* y_coords, real* z_coords, size_t n_atoms, real box_size,
+                                                const real dx0, const real A, const real B, const real cutoff, real T, real R,
+                                                std::default_random_engine& e1, std::uniform_real_distribution<real>& uniform_dist) {
+    real bias_factor = (1.0);
+
+    if (n_special_steps > 0) {
+        verlet_list_sp->constructVerletListFromEntireCellList(cell_list, n_atoms);
+    }
+
+    for (int k_spec = 0; k_spec < n_special_steps; ++k_spec) {
+/*                if(k_spec%2 == 1){
+                    verlet_list_sp->constructVerletListFromEntireCellList(*cell_list,
+                                                                          x_coords, y_coords, z_coords,
+                                                                          n_atoms, box_size/2., box_size, cutoff*cutoff);
+                }*/
+        for (int i = 0; i < n_atoms; ++i) {
+
+            gmx::RVec r_coords_new;
+            bias_factor = specialMoveDisplacements(cell_list, cell_list.particle2cell_index[i],
+                                                   x_coords[i], y_coords[i], z_coords[i],
+                                                   r_coords_new[XX], r_coords_new[YY], r_coords_new[ZZ],
+                                                   dx0, dx0, dx0, i, box_size, e1, uniform_dist);
+
+            const real new_particle_energy =
+                    energizer.calcNewParticleEnergyVLSpecial(*verlet_list_sp, i,
+                                                             x_coords, y_coords, z_coords,
+                                                             r_coords_new[XX], r_coords_new[YY], r_coords_new[ZZ],
+                                                             box_size,
+                                                             A, B, cutoff * cutoff);
+
+            const real energy_change = new_particle_energy - verlet_list_sp->particle_to_LJold[i];
+            const auto mc_factor = std::exp(-(energy_change) / (R * T)) / bias_factor;
+            auto roll = uniform_dist(e1);
+
+            if (roll < std::min(mc_factor, 1.0f)) {
+                x_coords[i] = r_coords_new[XX];
+                y_coords[i] = r_coords_new[YY];
+                z_coords[i] = r_coords_new[ZZ];
+
+                n_accepted++;
+                verlet_list_sp->particle_to_LJold[i] = new_particle_energy;
+            } else {
+/*                        x_coords_new[i] = x_coords[i];
+                        y_coords_new[i] = y_coords[i];
+                        z_coords_new[i] = z_coords[i];*/
+
+/*             r_coords[i] = r_coords_new;
+*/
+            }
+            n_total++;
+        }
+    }
+}
+
+/*
+
+void verletListFromCellListSpecialStepAlligned(const size_t n_special_steps,
+                                                  VerletListSpecial* verlet_list_sp, VerletList* verlet_list,
+                                                  Grid& cell_list, Energy& energizer,
+                                                  gmx::RVec* r_coords, size_t n_atoms, real box_size,
+                                                  const real dx0, const real A, const real B, const real cutoff, real T, real R,
+                                                  std::default_random_engine& e1, std::uniform_real_distribution<real>& uniform_dist) {
+    real bias_factor = (1.0);
+
+    if (n_special_steps > 0) {
+        verlet_list_sp->constructVerletListFromEntireCellList(cell_list, n_atoms);
+    }
+
+    for (int k_spec = 0; k_spec < n_special_steps; ++k_spec) {
+*/
+/*                if(k_spec%2 == 1){
+                    verlet_list_sp->constructVerletListFromEntireCellList(*cell_list,
+                                                                          x_coords, y_coords, z_coords,
+                                                                          n_atoms, box_size/2., box_size, cutoff*cutoff);
+                }*//*
+
+        for (int i = 0; i < n_atoms; ++i) {
+
+            gmx::RVec r_coords_new;
+            bias_factor = specialMoveDisplacements(cell_list,
+                                                   r_coords[i][XX], r_coords[i][YY], r_coords[i][ZZ],
+                                                   r_coords_new[XX], r_coords_new[YY], r_coords_new[ZZ],
+                                                   dx0, dx0, dx0, i, box_size, e1, uniform_dist);
+
+            const real new_particle_energy =
+                    energizer.calcNewParticleEnergyVLSpecial(*verlet_list_sp, i,
+                                                             r_coords,
+                                                             r_coords_new,
+                                                             box_size,
+                                                             A, B, cutoff * cutoff);
+
+            const real energy_change = new_particle_energy - verlet_list_sp->particle_to_LJold[i];
+            const auto mc_factor = std::exp(-(energy_change) / (R * T)) / bias_factor;
+            auto roll = uniform_dist(e1);
+
+            if (roll < std::min(mc_factor, 1.0f)) {
+                r_coords[i] = r_coords_new;
+
+                n_accepted++;
+                verlet_list_sp->particle_to_LJold[i] = new_particle_energy;
+                verlet_list->particle_to_LJold[i] = new_particle_energy;
+            } else {
+            }
+            n_total++;
+        }
+    }
+}
+*/
+
+
+
+
+        /*else {
+
+                std::vector<size_t> changed_indices;
+                std::sample(all_indices.begin(), all_indices.end(),
+                            std::back_inserter(changed_indices), k_changed,
+                            std::mt19937 {std::random_device{}()} );
+
+                for(int ki = 0; ki<k_changed; ++ki) {
+                    const auto dx = (uniform_dist(e1) - 0.5) * dx0;
+                    const auto dy = (uniform_dist(e1) - 0.5) * dx0;
+                    const auto dz = (uniform_dist(e1) - 0.5) * dx0;
+
+                    const auto changed_index = changed_indices[ki];
+
+                    real x_new = (x_coords[changed_index] + dx);
+                    x_new += -(box_size) * (x_new > box_size) + (box_size) * (x_new < 0);
+                    real y_new = (y_coords[changed_index] + dy);
+                    y_new += -(box_size) * (y_new > box_size) + (box_size) * (y_new < 0);
+                    real z_new = (z_coords[changed_index] + dz);
+                    z_new += -(box_size) * (z_new > box_size) + (box_size) * (z_new < 0);
+
+                    x_coords_new[changed_index] = x_new;
+                    y_coords_new[changed_index] = y_new;
+                    z_coords_new[changed_index] = z_new;
+                }
+
+             const real energy_change =
+                    energizer.calcChangedEnergiesCL(*cell_list, changed_indices,
+                                                       x_coords, y_coords, z_coords,
+                                                       x_coords_new, y_coords_new, z_coords_new,
+                                                       n_atoms, k_changed, box_size,
+                                                       A, B, cutoff * cutoff);
+
+                const auto mc_factor = std::exp(-energy_change / (R * T));
+                auto roll = uniform_dist(e1);
+                if (roll < std::min(mc_factor, 1.0f)) {
+                    for(int ki = 0; ki<k_changed; ++ki) {
+                        const auto changed_index = changed_indices[ki];
+                        updateCelllist(*cell_list,  x_coords_new[changed_index],
+                                                   y_coords_new[changed_index],
+                                                   z_coords_new[changed_index],
+                                                   changed_index);
+
+                        x_coords[changed_index] = x_coords_new[changed_index];
+                        y_coords[changed_index] = y_coords_new[changed_index];
+                        z_coords[changed_index] = z_coords_new[changed_index];
+                    }
+                    energy += energy_change;
+                    n_accepted++;
+                } else{
+                    for(int ki = 0; ki<k_changed; ++ki) {
+                        const auto changed_index = changed_indices[ki];
+
+                        x_coords_new[changed_index] = x_coords[changed_index];
+                        y_coords_new[changed_index] = y_coords[changed_index];
+                        z_coords_new[changed_index] = z_coords[changed_index];
+                    }
+                }
+                n_total++;
+            }*/
+
+
+
+void verletListFromCellListStepAlligned(const size_t& step, VerletList* verlet_list, Grid& cell_list, Energy& energizer,
+                                           gmx::RVec* r_coords, size_t n_atoms, real box_size,
+                                           const real dx0, const real A, const real B, const real cutoff, real T, real R,
+                                           std::default_random_engine& e1, std::uniform_real_distribution<real>& uniform_dist) {
+    if(step%2== 0){
+        verlet_list->constructVerletListEfficient(cell_list, r_coords, n_atoms, box_size);
+    }
+    for(int ki = 0; ki<n_atoms; ++ki) {
+        const auto i = ki;//changed_indices[ki];
+        const auto dx = (uniform_dist(e1) - 0.5) * dx0;
+        const auto dy = (uniform_dist(e1) - 0.5) * dx0;
+        const auto dz = (uniform_dist(e1) - 0.5) * dx0;
+
+        gmx::RVec r_coords_new;
+
+        r_coords_new[XX] = (r_coords[i][XX] + dx);
+        r_coords_new[XX]+= -(box_size) * (r_coords_new[XX] > box_size) + (box_size) * (r_coords_new[XX] < 0) ;
+        r_coords_new[YY] = (r_coords[i][YY] + dy);
+        r_coords_new[YY]+= -(box_size) * (r_coords_new[YY] > box_size) + (box_size) * (r_coords_new[YY] < 0) ;
+        r_coords_new[ZZ] = (r_coords[i][ZZ] + dz);
+        r_coords_new[ZZ] += -(box_size) * (r_coords_new[ZZ] > box_size) + (box_size) * (r_coords_new[ZZ] < 0) ;
+
+        const real new_particle_energy =
+                energizer.calcNewParticleEnergyVL(*verlet_list, i,
+                                                  r_coords,
+                                                  r_coords_new,
+                                                  box_size,
+                                                  A, B, cutoff * cutoff);
+        const real energy_change = new_particle_energy - verlet_list->particle_to_LJold[i];
+        const auto mc_factor = std::exp(-energy_change / (R * T));
+        auto roll = uniform_dist(e1);
+        if (roll < std::min(mc_factor, 1.0f)) {
+            r_coords[i] = r_coords_new;
+
+            updateCelllist(cell_list, r_coords_new[XX], r_coords_new[YY], r_coords_new[ZZ], i);
+            //    energy += energy_change;
+              verlet_list->particle_to_LJold[i] = new_particle_energy;
+
+            n_accepted++;
+        }
+        n_total++;
+    }
+}
+
+
+
+///////////////// ENERGY !!!!!!!!!!!!!!!!!!!!
+
+
+
+/*void Energy::calcEnergyCellIndex(  const real* __restrict__ x_coords, const real* __restrict__ y_coords, const real* __restrict__ z_coords,
+                                   const size_t* __restrict__ particle_indices,
+                                   const real x_old, const real y_old, const  real z_old,
+                                   const real x_new, const real y_new, const  real z_new,
+                                   const size_t n_particle_indices, real& energy_change, const std::vector<bool> & already_done,
+                                   const real box_length, const real half_box_length, const real A, const real B, const real cutoff_sq) {
+
+
+#pragma clang loop vectorize(enable)
+    for (int i = 0; i < n_particle_indices; ++i) {
+
+        const auto dx_old = distancePBC(x_coords[particle_indices[i]], x_old,
+                                        half_box_length, box_length);
+        const auto dy_old = distancePBC(y_coords[particle_indices[i]], y_old,
+                                        half_box_length, box_length);
+        const auto dz_old = distancePBC(z_coords[particle_indices[i]], z_old,
+                                        half_box_length, box_length);
+
+        const auto dr2_old = dx_old * dx_old + dy_old * dy_old + dz_old * dz_old;
+
+        real LJ_old = LJ(dr2_old, A, B, cutoff_sq) ;
+        energy_change -= LJ_old - LJ_old/2*(already_done[particle_indices[i]]);
+
+        const auto dx = distancePBC(x_coords[particle_indices[i]], x_new,
+                                    half_box_length, box_length) ;
+        const auto dy = distancePBC(y_coords[particle_indices[i]], y_new,
+                                    half_box_length, box_length);
+        const auto dz = distancePBC(z_coords[particle_indices[i]], z_new,
+                                    half_box_length, box_length);
+        const auto dr2 = dx * dx + dy * dy + dz * dz;
+
+        real LJ_new = LJ(dr2, A, B, cutoff_sq)   ;
+        energy_change += LJ_new - LJ_new/2 *(already_done[particle_indices[i]]);
+
+    }
+}*/
+
+
+
+
+/*real Energy::calcChangedEnergiesPartial(Grid& cell_list, std::vector<int> particle_indices,
+                                   real* x_coords, real* y_coords, real* z_coords,
+                                   real x_new, real y_new, real z_new,
+                                   size_t n_atoms,  real box_length,
+                                   real A, real B, real cutoff_sq){
+
+    real half_box_length = box_length/2.;
+    real energy_change = 0.0;
+
+    const auto& neighbouring_cells =
+            cell_list.cell2nearest_neighbours[cell_list.coordToCell(x_new, y_new, z_new)];
+
+    for( auto cell_index : neighbouring_cells){
+        const auto& neighbouring_particle_indices = cell_list.getParticleInidicesInCell(cell_index);
+        for( auto neighbouring_particle_index : neighbouring_particle_indices){
+            if( neighbouring_particle_index == particle_index){ continue; }
+
+            const auto dx_old = distancePBC(x_coords[neighbouring_particle_index], x_coords[particle_index],
+                                            half_box_length, box_length);
+            const auto dy_old = distancePBC(y_coords[neighbouring_particle_index], y_coords[particle_index],
+                                            half_box_length, box_length);
+            const auto dz_old = distancePBC(z_coords[neighbouring_particle_index], z_coords[particle_index],
+                                            half_box_length, box_length);
+
+            const auto dx = distancePBC(x_coords[neighbouring_particle_index], x_new,
+                                        half_box_length, box_length);
+            const auto dy = distancePBC(y_coords[neighbouring_particle_index], y_new,
+                                        half_box_length, box_length);
+            const auto dz = distancePBC(z_coords[neighbouring_particle_index], z_new,
+                                        half_box_length, box_length);
+            energy_change +=
+                    LJ(dx*dx + dy*dy + dz*dz, A, B, cutoff_sq) -
+                    LJ(dx_old*dx_old + dy_old*dy_old + dz_old*dz_old, A, B, cutoff_sq);
+
+        }
+    }
+    return energy_change;
+}*/
+
+
+
+/*
+
+real Energy::calcChangedEnergies(Grid& cell_list, int particle_index,
+                                   real* x_coords, real* y_coords, real* z_coords,
+                                   real x_new, real y_new, real z_new,
+                                   size_t n_atoms,  real box_length,
+                                   real A, real B, real cutoff_sq){
+
+    real half_box_length = box_length/2.;
+    real energy_change = 0.0;
+
+    const auto& neighbouring_cells =
+            cell_list.cell2nearest_neighbours[cell_list.coordToCell(x_new, y_new, z_new)];
+
+    for( auto cell_index : neighbouring_cells){
+        const auto& neighbouring_particle_indices = cell_list.getParticleInidicesInCell(cell_index);
+
+#pragma clang loop vectorize(enable)
+        for( auto neighbouring_particle_index : neighbouring_particle_indices){
+            if( neighbouring_particle_index == particle_index){ continue; }
+
+            const auto dx_old = distancePBC(x_coords[neighbouring_particle_index], x_coords[particle_index],
+                                            half_box_length, box_length);
+            const auto dy_old = distancePBC(y_coords[neighbouring_particle_index], y_coords[particle_index],
+                                            half_box_length, box_length);
+            const auto dz_old = distancePBC(z_coords[neighbouring_particle_index], z_coords[particle_index],
+                                            half_box_length, box_length);
+
+            const auto dx = distancePBC(x_coords[neighbouring_particle_index], x_new,
+                                        half_box_length, box_length);
+            const auto dy = distancePBC(y_coords[neighbouring_particle_index], y_new,
+                                        half_box_length, box_length);
+            const auto dz = distancePBC(z_coords[neighbouring_particle_index], z_new,
+                                        half_box_length, box_length);
+            const auto dr2 = dx*dx + dy*dy + dz*dz;
+            const auto dr2_old = dx_old*dx_old + dy_old*dy_old + dz_old*dz_old;
+
+            real LJ_old;
+            dr2_old < cutoff_sq ? LJ_old = LJ(dr2_old, A, B, cutoff_sq) : LJ_old = 0.0;
+
+            real LJ_new;
+            dr2 < cutoff_sq ? LJ_new = LJ(dr2, A, B, cutoff_sq) : LJ_new = 0.0;
+
+            energy_change += LJ_new - LJ_old;
+
+        }
+    }
+    return energy_change;
+}
+*/
+
+
+
+// Potential Energy evaluations: kx(k-1)/2 + (n-k)xk = -k/2 -k^2/2  + n k //
+// Cell List updates: 1. (Worst case) -> k  ... removals/additions of particles
+//                    2. (Best case) -> 0 ... r/a  ... possibly special move
+//                    3. (Realistic case) -> kr
+// Total Cost per move: sum kri=0..k [Pr(kr = kri) * kri * C(r_a) ]  + C(e)*(-k/2 -k^2/2  + n k)
+// Correlation time t_corr(k)
+// Optimize (Total Cost per Move)(k) * t_corr(k)
+
